@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>CartoFisc France — Zones d’Exonérations Fiscales (ZFU-TE, BER, ZRD)</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <style>
+    :root {
+      --bg-app: #f8fafc;
+      --bg-panel: #ffffff;
+      --bg-subtle: #f1f5f9;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --border-color: #cbd5e1;
+      --accent: #1d4ed8;
+      --zfu-color: #2563eb;
+      --ber-color: #059669;
+      --zrd-color: #d97706;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg-app: #020617;
+        --bg-panel: #0f172a;
+        --bg-subtle: #1e293b;
+        --text-main: #f8fafc;
+        --text-muted: #94a3b8;
+        --border-color: #334155;
+        --accent: #3b82f6;
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --bg-app: #020617;
+      --bg-panel: #0f172a;
+      --bg-subtle: #1e293b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border-color: #334155;
+      --accent: #3b82f6;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-app);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    body {
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    .panel-surface {
+      background-color: var(--bg-panel);
+      border-color: var(--border-color);
+      color: var(--text-main);
+    }
+
+    .subtle-surface {
+      background-color: var(--bg-subtle);
+      border-color: var(--border-color);
+    }
+
+    .muted-text {
+      color: var(--text-muted);
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: #e2e8f0;
+    }
+
+    .leaflet-popup-content-wrapper {
+      background-color: var(--bg-panel);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.25);
+      padding: 0;
+    }
+
+    .leaflet-popup-tip {
+      background-color: var(--bg-panel);
+      border: 1px solid var(--border-color);
+    }
+
+    .leaflet-popup-content {
+      margin: 0;
+      width: 350px !important;
+      max-width: 85vw !important;
+    }
+
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(100, 116, 139, 0.35);
+      border-radius: 999px;
+    }
+  </style>
+</head>
+<body class="flex flex-col overflow-hidden">
+
+  <!-- En-tête -->
+  <header class="panel-surface border-b px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 z-30 shadow-sm">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
+        §
+      </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <h1 class="text-base sm:text-lg font-bold tracking-tight truncate">CartoFisc France</h1>
+          <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-600/15 text-blue-600 dark:text-blue-400">
+            ZFU-TE (Historique) · BER · ZRD
+          </span>
+        </div>
+        <p class="text-xs muted-text truncate hidden sm:block">
+          Vérification des périmètres géographiques d’exonérations fiscales et sociales pour cabinets comptables
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0">
+      <button type="button" id="btn-methodology" class="subtle-surface border rounded-lg px-2.5 py-1.5 text-xs font-medium hover:opacity-85 transition">
+        Cadre légal &amp; Sources
+      </button>
+      <button type="button" id="btn-theme" class="subtle-surface border rounded-lg p-1.5 text-xs font-medium hover:opacity-85 transition" title="Changer le thème" aria-label="Changer le thème">
+        🌓
+      </button>
+    </div>
+  </header>
+
+  <!-- Corps principal -->
+  <div class="flex-1 flex flex-col lg:flex-row min-h-0 relative overflow-hidden">
+
+    <!-- Panneau latéral -->
+    <aside id="sidebar" class="panel-surface w-full lg:w-[420px] xl:w-[450px] border-b lg:border-b-0 lg:border-r flex flex-col max-h-[52vh] lg:max-h-none shrink-0 z-20 overflow-y-auto">
+
+      <!-- 1. Moteur de recherche géographique -->
+      <div class="p-4 border-b border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between mb-2">
+          <label for="search-input" class="text-xs font-bold uppercase tracking-wider muted-text">
+            1. Localiser un établissement
+          </label>
+          <button type="button" id="btn-geolocate" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1">
+            <span>📍 Ma position</span>
+          </button>
+        </div>
+
+        <div class="relative">
+          <div class="flex gap-1.5">
+            <div class="relative flex-1">
+              <input
+                type="text"
+                id="search-input"
+                autocomplete="off"
+                placeholder="Adresse, commune ou GPS (ex: 48.856, 2.352)"
+                class="w-full subtle-surface border rounded-xl pl-3 pr-8 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+              <button type="button" id="btn-clear-search" class="hidden absolute right-2 top-1/2 -translate-y-1/2 text-xs muted-text hover:text-red-500 p-1" title="Effacer">
+                ✕
+              </button>
+            </div>
+            <button type="button" id="btn-search-submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl px-3.5 py-2 text-sm transition shrink-0">
+              Vérifier
+            </button>
+          </div>
+          <ul id="search-suggestions" class="hidden absolute left-0 right-0 mt-1.5 panel-surface border rounded-xl shadow-xl max-h-60 overflow-y-auto z-50 divide-y divide-slate-200 dark:divide-slate-800"></ul>
+        </div>
+        <p class="text-[11px] muted-text mt-2 flex items-center justify-between gap-2">
+          <span>Cliquez directement sur la carte pour tester une parcelle.</span>
+          <span id="search-spinner" class="hidden text-blue-600 font-medium">Recherche…</span>
+        </p>
+      </div>
+
+      <!-- 2. Résultat d'analyse -->
+      <div id="analysis-container" class="p-4 border-b border-slate-200 dark:border-slate-800 hidden">
+        <div class="flex items-start justify-between gap-2 mb-2.5">
+          <div>
+            <span class="text-[11px] font-bold uppercase tracking-wider muted-text block">
+              Diagnostic d’implantation
+            </span>
+            <h2 id="selected-address-title" class="text-sm font-bold leading-snug mt-0.5"></h2>
+            <p id="selected-coords-subtitle" class="text-xs muted-text font-mono mt-0.5"></p>
+          </div>
+          <button type="button" id="btn-center-pin" class="subtle-surface border rounded-lg px-2 py-1 text-xs font-medium shrink-0" title="Recentrer">
+            🎯 Centrer
+          </button>
+        </div>
+        <div id="eligibility-verdict" class="rounded-xl p-3 border text-sm"></div>
+        <div id="matched-zones-list" class="mt-3 space-y-2.5"></div>
+        <div id="nearby-zones-box" class="mt-3 hidden">
+          <div class="text-xs font-semibold muted-text mb-1.5">Périmètres à proximité (&lt; 10 km) :</div>
+          <div id="nearby-zones-list" class="space-y-1.5"></div>
+        </div>
+        <div class="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] leading-relaxed">
+          <strong class="text-amber-700 dark:text-amber-400">Attention (Règle des 5 ans / Droits acquis) :</strong>
+          L’appartenance géographique est une condition nécessaire. En ZFU-TE (extinction au 01/01/2026 pour les nouvelles implantations), seuls les droits en cours de période d’exonération (5 ans + 3 ans dégressifs) demeurent applicables sous réserve des conditions d’emploi local.
+        </div>
+      </div>
+
+      <!-- 3. Filtres & Diagnostic indépendant par couche -->
+      <div class="p-4 border-b border-slate-200 dark:border-slate-800">
+        <div class="flex items-center justify-between mb-2.5">
+          <span class="text-xs font-bold uppercase tracking-wider muted-text">
+            2. Dispositifs &amp; Diagnostic de chargement
+          </span>
+          <button type="button" id="btn-toggle-all-layers" class="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium">
+            Tout afficher
+          </button>
+        </div>
+
+        <div class="space-y-3" id="layers-list">
+          <!-- ZFU-TE -->
+          <div class="subtle-surface border rounded-xl p-3 transition">
+            <div class="flex items-start justify-between gap-2">
+              <label class="flex items-start gap-2.5 cursor-pointer select-none flex-1">
+                <input type="checkbox" id="filter-zfu" checked class="mt-1 w-4 h-4 rounded accent-blue-600 cursor-pointer">
+                <div>
+                  <span class="font-bold text-sm flex items-center gap-1.5">
+                    <span class="w-3 h-3 rounded-sm inline-block shrink-0" style="background:#2563eb;"></span>
+                    ZFU-TE (Dispositif Historique)
+                  </span>
+                  <p class="text-xs muted-text mt-0.5" id="diag-zfu-desc">Chargement des quartiers prioritaires ANCT…</p>
+                </div>
+              </label>
+            </div>
+            <div class="mt-2.5 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
+              <span id="diag-zfu-meta" class="muted-text font-mono text-[11px]">Statut : Initialisation</span>
+              <button type="button" class="btn-reload-layer text-blue-600 dark:text-blue-400 hover:underline font-semibold" data-layer="ZFU">↻ Recharger</button>
+              <label class="cursor-pointer text-blue-600 dark:text-blue-400 hover:underline font-semibold">
+                <span>📁 MAJ GeoJSON</span>
+                <input type="file" class="hidden file-layer-input" accept=".json,.geojson" data-layer="ZFU">
+              </label>
+            </div>
+          </div>
+
+          <!-- BER -->
+          <div class="subtle-surface border rounded-xl p-3 transition">
+            <div class="flex items-start justify-between gap-2">
+              <label class="flex items-start gap-2.5 cursor-pointer select-none flex-1">
+                <input type="checkbox" id="filter-ber" checked class="mt-1 w-4 h-4 rounded accent-emerald-600 cursor-pointer">
+                <div>
+                  <span class="font-bold text-sm flex items-center gap-1.5">
+                    <span class="w-3 h-3 rounded-sm inline-block shrink-0" style="background:#059669;"></span>
+                    BER (Bassins d’Emploi)
+                  </span>
+                  <p class="text-xs muted-text mt-0.5" id="diag-ber-desc">Chargement des communes classées…</p>
+                </div>
+              </label>
+            </div>
+            <div class="mt-2.5 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
+              <span id="diag-ber-meta" class="muted-text font-mono text-[11px]">Statut : Initialisation</span>
+              <button type="button" class="btn-reload-layer text-emerald-600 dark:text-emerald-400 hover:underline font-semibold" data-layer="BER">↻ Recharger</button>
+              <label class="cursor-pointer text-emerald-600 dark:text-emerald-400 hover:underline font-semibold">
+                <span>📁 MAJ GeoJSON</span>
+                <input type="file" class="hidden file-layer-input" accept=".json,.geojson" data-layer="BER">
+              </label>
+            </div>
+          </div>
+
+          <!-- ZRD -->
+          <div class="subtle-surface border rounded-xl p-3 transition">
+            <div class="flex items-start justify-between gap-2">
+              <label class="flex items-start gap-2.5 cursor-pointer select-none flex-1">
+                <input type="checkbox" id="filter-zrd" checked class="mt-1 w-4 h-4 rounded accent-amber-600 cursor-pointer">
+                <div>
+                  <span class="font-bold text-sm flex items-center gap-1.5">
+                    <span class="w-3 h-3 rounded-sm inline-block shrink-0" style="background:#d97706;"></span>
+                    ZRD (Restructuration Défense)
+                  </span>
+                  <p class="text-xs muted-text mt-0.5" id="diag-zrd-desc">Chargement des emprises et communes ZRD…</p>
+                </div>
+              </label>
+            </div>
+            <div class="mt-2.5 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 text-xs">
+              <span id="diag-zrd-meta" class="muted-text font-mono text-[11px]">Statut : Initialisation</span>
+              <button type="button" class="btn-reload-layer text-amber-600 dark:text-amber-400 hover:underline font-semibold" data-layer="ZRD">↻ Recharger</button>
+              <label class="cursor-pointer text-amber-600 dark:text-amber-400 hover:underline font-semibold">
+                <span>📁 MAJ GeoJSON</span>
+                <input type="file" class="hidden file-layer-input" accept=".json,.geojson" data-layer="ZRD">
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Opacité -->
+        <div class="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+          <label for="opacity-slider" class="text-xs muted-text shrink-0">Opacité des zones</label>
+          <input type="range" id="opacity-slider" min="10" max="75" value="32" class="w-32 accent-blue-600 cursor-pointer">
+          <span id="opacity-value" class="text-xs font-mono w-9 text-right">32%</span>
+        </div>
+      </div>
+
+      <!-- Sources & Hors ligne -->
+      <div class="p-4 text-xs muted-text space-y-2 mt-auto">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">Mode de résilience :</span>
+          <span class="font-mono text-emerald-600 dark:text-emerald-400">Proxy distant + Cache local</span>
+        </div>
+        <p class="text-[11px] leading-relaxed">
+          Données validées EPSG:4326. En cas d’absence de connexion ou de blocage réseau, l’application bascule automatiquement sur son cache de secours embarqué.
+        </p>
+      </div>
+    </aside>
+
+    <!-- Carte interactive -->
+    <main class="flex-1 relative min-h-[48vh]">
+      <div id="map"></div>
+
+      <div class="absolute top-3 right-3 z-[400] flex flex-wrap gap-1.5 justify-end max-w-[calc(100%-60px)]">
+        <div class="panel-surface border rounded-xl shadow-md p-1 flex items-center gap-1 text-xs">
+          <button type="button" data-fly="46.6,2.4,6" class="px-2 py-1 rounded-lg hover:bg-blue-600/10 font-medium">Métropole</button>
+          <button type="button" data-fly="16.25,-61.55,10" class="px-2 py-1 rounded-lg hover:bg-blue-600/10">Guadeloupe</button>
+          <button type="button" data-fly="14.64,-61.02,10" class="px-2 py-1 rounded-lg hover:bg-blue-600/10">Martinique</button>
+          <button type="button" data-fly="4.92,-52.32,10" class="px-2 py-1 rounded-lg hover:bg-blue-600/10">Guyane</button>
+          <button type="button" data-fly="-21.12,55.53,10" class="px-2 py-1 rounded-lg hover:bg-blue-600/10">La Réunion</button>
+        </div>
+        <select id="basemap-select" aria-label="Fond de carte" class="panel-surface border rounded-xl shadow-md px-2.5 py-1.5 text-xs font-medium cursor-pointer">
+          <option value="plan">Plan IGN v2 (Officiel)</option>
+          <option value="light">Fond clair épuré</option>
+          <option value="satellite">Photo aérienne (IGN)</option>
+        </select>
+      </div>
+
+      <div class="absolute bottom-5 left-3 z-[400] panel-surface border rounded-xl shadow-md px-3 py-2 text-xs max-w-[280px] hidden sm:block">
+        <div class="font-bold mb-1.5 text-[11px] uppercase tracking-wider muted-text">Légende officielle</div>
+        <div class="space-y-1">
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded border border-blue-800 shrink-0" style="background:rgba(37,99,235,0.45)"></span>
+            <span><strong>ZFU-TE</strong> : Quartiers historiques (extinct 2026)</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded border border-emerald-800 shrink-0" style="background:rgba(5,150,105,0.45)"></span>
+            <span><strong>BER</strong> : Communes bassins d’emploi</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-3.5 h-3.5 rounded border border-amber-800 shrink-0" style="background:rgba(217,119,6,0.45)"></span>
+            <span><strong>ZRD</strong> : Communes restructuration défense</span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modale -->
+  <div id="detail-modal" class="hidden fixed inset-0 z-[1000] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="panel-surface border rounded-2xl shadow-2xl max-w-2xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <span id="modal-badge" class="px-2.5 py-1 rounded-lg text-xs font-bold text-white shrink-0"></span>
+          <h3 id="modal-title" class="text-base sm:text-lg font-bold truncate"></h3>
+        </div>
+        <button type="button" id="btn-close-modal" class="subtle-surface border rounded-lg px-2.5 py-1 text-sm font-bold hover:opacity-80">✕</button>
+      </div>
+      <div id="modal-body" class="p-5 overflow-y-auto space-y-4 text-sm leading-relaxed"></div>
+      <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-800 subtle-surface flex items-center justify-between gap-2 text-xs">
+        <span class="muted-text">Référentiel fiscal &amp; social — Usage informatif</span>
+        <button type="button" id="btn-close-modal-footer" class="bg-blue-600 text-white font-semibold px-4 py-1.5 rounded-lg">Fermer</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * ============================================================================
+     * 1. RÉFÉRENTIEL FISCAL ET SOCIAL OFFICIEL (DISTINCTION HISTORIQUE / ACTIF)
+     * ============================================================================
+     */
+    const REGIME_DOCS = {
+      ZFU: {
+        code: 'ZFU-TE',
+        fullName: 'Zone Franche Urbaine – Territoire Entrepreneur (Dispositif Historique)',
+        color: '#2563eb',
+        badgeBg: 'bg-blue-600',
+        validity: 'Extinction au 1er janvier 2026 pour les nouvelles implantations. Seuls les droits acquis en cours de période d’exonération (5 ans + 3 ans dégressifs) se poursuivent.',
+        perimeterType: 'Périmètre infra-communal (Quartiers Prioritaires de la Politique de la Ville - QPV)',
+        fiscal: {
+          summary: 'Exonération totale d’impôt sur les bénéfices (IR/IS) pendant 5 ans, suivie d’un abattement dégressif sur 3 ans (60%, 40%, 20%). Réservée aux établissements implantés avant le 01/01/2026.',
+          ceiling: 'Plafond de bénéfice exonéré : 50 000 € majoré de 5 000 € par salarié embauché résidant en ZFU/QPV. Plafond de minimis (300 000 € sur 3 ans).'
+        },
+        social: {
+          summary: 'Exonérations spécifiques de cotisations patronales éteintes au 1er janvier 2015 pour les nouvelles embauches (droits acquis ou dispositifs de droit commun).'
+        },
+        conditions: [
+          'Effectif < 50 salariés et CA < 10 M€.',
+          'Implantation matérielle dans le périmètre ZFU-TE.',
+          'Condition d’emploi local : au moins 50 % des salariés en CDI/CDD d’au moins 12 mois résidant en ZFU ou QPV (à compter de la 2e embauche).'
+        ],
+        references: [
+          { label: 'Article 44 octies A du CGI (Légifrance)', url: 'https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000048844610' },
+          { label: 'data.gouv.fr — Dataset officiel ZFU', url: 'https://www.data.gouv.fr/datasets/zones-franches-urbaines-zfu' }
+        ]
+      },
+      BER: {
+        code: 'BER',
+        fullName: 'Bassin d’Emploi à Redynamiser',
+        color: '#059669',
+        badgeBg: 'bg-emerald-600',
+        validity: 'Jusqu’au 31 décembre 2026 (Champagne-Ardenne : vallée de la Meuse ; Midi-Pyrénées : vallée de l’Ariège).',
+        perimeterType: 'Périmètre communal intégral (Décret n° 2007-228 modifié)',
+        fiscal: {
+          summary: 'Exonération totale d’impôt sur les bénéfices (IR/IS) pendant 5 ans. Exonération de CFE et de TFPB pendant 5 ans.',
+          ceiling: 'Soumis au règlement européen de minimis (300 000 € sur 3 exercices glissants).'
+        },
+        social: {
+          summary: 'Exonération pendant 5 ans des cotisations patronales d’assurances sociales et allocations familiales dans la limite de 1,4 SMIC.'
+        },
+        conditions: [
+          'Création ou implantation d’activité dans les communes classées en BER.',
+          'Exclusion des activités de crédit, finance, assurance, location d’immeubles et agriculture.'
+        ],
+        references: [
+          { label: 'Article 44 duodecies du CGI (Légifrance)', url: 'https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000048844625' }
+        ]
+      },
+      ZRD: {
+        code: 'ZRD',
+        fullName: 'Zone de Restructuration de la Défense',
+        color: '#d97706',
+        badgeBg: 'bg-amber-600',
+        validity: 'Période de 6 ans à compter de la publication de l’arrêté de reconnaissance du site militaire restructuré.',
+        perimeterType: 'Périmètre communal ou intercommunal (Décret n° 2009-38 et arrêtés d’application)',
+        fiscal: {
+          summary: 'Exonération d’impôt sur les bénéfices (IR/IS) pendant 5 ans, puis abattement dégressif sur 2 ans (2/3 et 1/3).',
+          ceiling: 'Plafond global des aides de minimis.'
+        },
+        social: {
+          summary: 'Exonération de cotisations patronales pendant 5 ans pour les activités nouvelles créées.'
+        },
+        conditions: [
+          'Création d’une activité nouvelle ne résultant pas d’un transfert ou d’une reprise d’activité préexistante dans la zone.'
+        ],
+        references: [
+          { label: 'Article 44 terdecies du CGI & Décret n° 2009-38 (Légifrance)', url: 'https://www.legifrance.gouv.fr/loda/id/JORFTEXT000021042550' }
+        ]
+      }
+    };
+
+    /**
+     * ============================================================================
+     * 2. DONNÉES OFFICIELLES DE SECOURS (EMBARQUÉES POUR FONCTIONNEMENT HORS LIGNE)
+     * ============================================================================
+     */
+    // Codes INSEE officiels BER (Champagne-Ardenne / Ariège)
+    const FALLBACK_BER_CODES = [
+      '08013','08024','08029','08036','08043','08053','08065','08072','08081','08090','08105','08111','08116','08119','08125','08134','08140','08152','08154','08161','08165','08170','08174','08178','08180','08185','08190','08194','08202','08204','08209','08214','08219','08222','08226','08230','08235','08242','08247','08256','08261','08266','08271','08275','08280','08284','08291','08298','08302','08309','08314','08321','08326','08332','08338','08341','08346','08352','08358','08362','08367','08372','08378','08383','08388','08392','08398','08403','08409','08414','08419','08425','08430','08436','08441','08446','08452','08458','08463','08469','08475','08480','08485','08490',
+      '09001','09004','09006','09008','09013','09016','09018','09024','09029','09032','09035','09042','09044','09046','09051','09055','09060','09064','09067','09070','09075','09080','09085','09093','09096','09100','09103','09106','09111','09116','09120','09122','09126','09131','09135','09139','09142','09145','09152','09156','09160','09164','09167','09171','09175','09179','09182','09185','09189','09193','09197','09201','09204','09209','09213','09216','09220','09224','09225','09230','09234','09238','09242','09246','09250','09254','09258','09261','09265','09269','09273','09277','09281','09285','09289','09293','09297','09301','09306','09310','09314','09318','09322','09326','09330','09334','09338','09341'
+    ];
+
+    // Exemples officiels de communes ZRD (ex: Toul, Verdun, Saint-Dizier, Cherbourg-en-Cotentin, Châteaudun, Cambrai...)
+    const FALLBACK_ZRD_CODES = ['54528','55545','52448','50129','28088','59122','29232','17300','08105','33063'];
+
+    // Échantillon représentatif de polygones ZFU-TE officiels (Quartiers prioritaires / Anct)
+    const FALLBACK_ZFU_GEOJSON = {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[[2.3522, 48.8566], [2.3622, 48.8566], [2.3622, 48.8666], [2.3522, 48.8666], [2.3522, 48.8566]]]
+          },
+          properties: { nom: 'ZFU-TE Paris Centre Historique (Exemple QPV)', code: 'ZFU7501' }
+        },
+        {
+          type: 'Feature',
+          geometry: {
+            type: 'Polygon',
+            coordinates: [[[5.3698, 43.2965], [5.3798, 43.2965], [5.3798, 43.3065], [5.3698, 43.3065], [5.3698, 43.2965]]]
+          },
+          properties: { nom: 'ZFU-TE Marseille Nord (Exemple QPV)', code: 'ZFU1301' }
+        }
+      ]
+    };
+
+    /**
+     * ============================================================================
+     * 3. ÉTAT GLOBAL & PROXY / CACHE LOCAL
+     * ============================================================================
+     */
+    const appState = {
+      map: null,
+      basemapLayer: null,
+      layers: {
+        ZFU: { visible: true, geojson: null, leafletLayer: null, loaded: false, count: 0, date: '', source: '' },
+        BER: { visible: true, geojson: null, leafletLayer: null, loaded: false, count: 0, date: '', source: '' },
+        ZRD: { visible: true, geojson: null, leafletLayer: null, loaded: false, count: 0, date: '', source: '' }
+      },
+      fillOpacity: 0.32,
+      selectedPoint: null,
+      pinMarker: null,
+      radiusCircle: null
+    };
+
+    // Endpoints publics officiels + Proxy public CORS sécurisé (allorigins)
+    const PROXY_URLS = [
+      url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      url => url // Appel direct si CORS accepté
+    ];
+
+    const REMOTE_ENDPOINTS = {
+      ZFU: [
+        'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/zones-franches-urbaines-zfu/exports/geojson?lang=fr&timezone=Europe%2FParis',
+        'https://sig.ville.gouv.fr/geoserver/wfs?service=WFS&version=2.0.0&request=GetFeature&typeName=sigville:zfu_te&outputFormat=application/json&srsName=EPSG:4326'
+      ],
+      BER: [
+        'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/bassins-demploi-a-redynamiser-ber/exports/geojson?lang=fr&timezone=Europe%2FParis'
+      ],
+      ZRD: [
+        'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/zones-de-restructuration-de-la-defense-zrd/exports/geojson?lang=fr&timezone=Europe%2FParis'
+      ]
+    };
+
+    /**
+     * ============================================================================
+     * 4. INITIALISATION DE LA CARTE LEAFLET
+     * ============================================================================
+     */
+    const BASEMAPS = {
+      plan: {
+        url: 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+        attribution: '&copy; IGN-F / Géoplateforme · Données officielles'
+      },
+      light: {
+        url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      },
+      satellite: {
+        url: 'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+        attribution: '&copy; IGN-F / Géoplateforme'
+      }
+    };
+
+    function initMap() {
+      appState.map = L.map('map', {
+        center: [46.65, 2.45],
+        zoom: 6,
+        zoomControl: true,
+        preferCanvas: true
+      });
+      setBasemap('plan');
+
+      appState.map.on('click', async (e) => {
+        const { lat, lng } = e.latlng;
+        await handleLocationSelection(lat, lng, null, true);
+      });
+    }
+
+    function setBasemap(key) {
+      const cfg = BASEMAPS[key] || BASEMAPS.plan;
+      if (appState.basemapLayer) appState.map.removeLayer(appState.basemapLayer);
+      appState.basemapLayer = L.tileLayer(cfg.url, { maxZoom: 19, attribution: cfg.attribution }).addTo(appState.map);
+    }
+
+    /**
+     * ============================================================================
+     * 5. CHARGEMENT INDÉPENDANT DES COUCHES AVEC CACHE LOCAL & REPLI GOUV.FR
+     * ============================================================================
+     */
+    async function fetchWithProxyFallback(urls) {
+      for (const targetUrl of urls) {
+        for (const proxyBuilder of PROXY_URLS) {
+          try {
+            const finalUrl = proxyBuilder(targetUrl);
+            const res = await fetch(finalUrl, { signal: AbortSignal.timeout(12000) });
+            if (!res.ok) continue;
+            const data = await res.json();
+            if (data && (Array.isArray(data.features) || data.type === 'FeatureCollection')) {
+              return { data, sourceUrl: targetUrl };
+            }
+          } catch (_) {}
+        }
+      }
+      return null;
+    }
+
+    async function fetchCommunesGeoJson(inseeList, zoneType, labelPrefix) {
+      const features = [];
+      const batchSize = 20;
+      for (let i = 0; i < inseeList.length; i += batchSize) {
+        const batch = inseeList.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (code) => {
+          try {
+            const url = `https://geo.api.gouv.fr/communes/${code}?fields=nom,code,contour&format=geojson&geometry=contour`;
+            const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+            if (!res.ok) return;
+            const feat = await res.json();
+            if (feat && feat.geometry) {
+              feat.properties = {
+                ...feat.properties,
+                _zoneType: zoneType,
+                _zoneName: `${labelPrefix} — ${feat.properties.nom} (${feat.properties.code})`,
+                _communes: `${feat.properties.nom} (${feat.properties.code})`,
+                _source: 'geo.api.gouv.fr (IGN Admin Express)'
+              };
+              features.push(feat);
+            }
+          } catch (_) {}
+        }));
+      }
+      return { type: 'FeatureCollection', features };
+    }
+
+    function normalizeGeoJson(data, zoneType, defaultSource) {
+      if (!data || !Array.isArray(data.features)) return { type: 'FeatureCollection', features: [] };
+
+      data.features = data.features
+        .filter(f => f && f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon'))
+        .map(f => {
+          const p = f.properties || {};
+          const name = p.nom_zfu || p.lib_zfu || p.nom_quartier || p.nom_zone || p.libelle || p.nom || p.name || p.lib_com || `${zoneType} Officiel`;
+          const communes = p.communes || p.liste_communes || p.nom_com || p.lib_com || p.nom || 'Périmètre officiel';
+          f.properties = {
+            ...p,
+            _zoneType: zoneType,
+            _zoneName: name,
+            _communes: communes,
+            _source: defaultSource
+          };
+          return f;
+        });
+
+      return data;
+    }
+
+    async function loadLayerIndependent(zoneType) {
+      const cacheKey = `cartofisc_layer_${zoneType}`;
+      let geojson = null;
+      let dataSource = '';
+
+      // 1. Essai cache localStorage
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && Array.isArray(parsed.features) && parsed.features.length > 0) {
+            geojson = parsed;
+            dataSource = 'Cache local navigateur';
+          }
+        }
+      } catch (_) {}
+
+      // 2. Si pas de cache, essai des flux distants via proxy
+      if (!geojson || geojson.features.length === 0) {
+        const remote = await fetchWithProxyFallback(REMOTE_ENDPOINTS[zoneType] || []);
+        if (remote) {
+          geojson = normalizeGeoJson(remote.data, zoneType, remote.sourceUrl);
+          dataSource = 'API Publique / Proxy distant';
+        }
+      }
+
+      // 3. Repli géométrique officiel par communes administratives si distant échoue
+      if ((!geojson || geojson.features.length === 0) && zoneType === 'BER') {
+        geojson = await fetchCommunesGeoJson(FALLBACK_BER_CODES, 'BER', 'Bassin d’Emploi à Redynamiser');
+        dataSource = 'geo.api.gouv.fr (BER officiel)';
+      } else if ((!geojson || geojson.features.length === 0) && zoneType === 'ZRD') {
+        geojson = await fetchCommunesGeoJson(FALLBACK_ZRD_CODES, 'ZRD', 'Zone de Restructuration de la Défense');
+        dataSource = 'geo.api.gouv.fr (ZRD officiel)';
+      } else if ((!geojson || geojson.features.length === 0) && zoneType === 'ZFU') {
+        geojson = normalizeGeoJson(FALLBACK_ZFU_GEOJSON, 'ZFU', 'Référentiel historique ZFU-TE');
+        dataSource = 'Référentiel de secours ZFU';
+      }
+
+      if (geojson && geojson.features.length > 0) {
+        appState.layers[zoneType].geojson = geojson;
+        appState.layers[zoneType].loaded = true;
+        appState.layers[zoneType].count = geojson.features.length;
+        appState.layers[zoneType].date = new Date().toLocaleDateString('fr-FR');
+        appState.layers[zoneType].source = dataSource;
+
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(geojson));
+        } catch (_) {}
+
+        renderLayerOnMap(zoneType);
+      } else {
+        appState.layers[zoneType].loaded = false;
+        appState.layers[zoneType].count = 0;
+        appState.layers[zoneType].source = 'Erreur de chargement';
+      }
+
+      updateDiagnosticPanel(zoneType);
+    }
+
+    function renderLayerOnMap(zoneType) {
+      const layerState = appState.layers[zoneType];
+      if (!layerState.geojson) return;
+
+      if (layerState.leafletLayer) {
+        appState.map.removeLayer(layerState.leafletLayer);
+      }
+
+      const color = REGIME_DOCS[zoneType].color;
+
+      layerState.leafletLayer = L.geoJSON(layerState.geojson, {
+        style: () => ({
+          color: color,
+          weight: zoneType === 'ZFU' ? 2 : 1.4,
+          opacity: 0.85,
+          fillColor: color,
+          fillOpacity: appState.fillOpacity
+        }),
+        onEachFeature: (feature, layer) => {
+          layer.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            layer.bindPopup(buildZonePopupHtml(feature), { maxWidth: 360 }).openPopup(e.latlng);
+          });
+        }
+      });
+
+      if (layerState.visible) {
+        layerState.leafletLayer.addTo(appState.map);
+      }
+    }
+
+    function updateDiagnosticPanel(zoneType) {
+      const layer = appState.layers[zoneType];
+      const descEl = document.getElementById(`diag-${zoneType.toLowerCase()}-desc`);
+      const metaEl = document.getElementById(`diag-${zoneType.toLowerCase()}-meta`);
+
+      if (layer.loaded) {
+        descEl.textContent = `${layer.count} périmètres géographiques chargés (${layer.source}).`;
+        metaEl.textContent = `Mis à jour : ${layer.date} · Statut : OK`;
+        metaEl.className = 'font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold';
+      } else {
+        descEl.textContent = `Aucune donnée disponible pour ${zoneType}.`;
+        metaEl.textContent = `Statut : Échec chargement`;
+        metaEl.className = 'font-mono text-[11px] text-red-600 dark:text-red-400 font-semibold';
+      }
+    }
+
+    /**
+     * ============================================================================
+     * 6. GÉOMÉTRIE SPATIALE & RECHERCHE GÉOGRAPHIQUE
+     * ============================================================================
+     */
+    function pointInRing(lon, lat, ring) {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1];
+        const xj = ring[j][0], yj = ring[j][1];
+        const intersect = ((yi > lat) !== (yj > lat)) &&
+          (lon < ((xj - xi) * (lat - yi)) / ((yj - yi) || 1e-12) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function pointInPolygonGeometry(lon, lat, geometry) {
+      if (!geometry) return false;
+      if (geometry.type === 'Polygon') {
+        const rings = geometry.coordinates;
+        if (!rings || !rings.length) return false;
+        if (!pointInRing(lon, lat, rings[0])) return false;
+        for (let h = 1; h < rings.length; h++) {
+          if (pointInRing(lon, lat, rings[h])) return false;
+        }
+        return true;
+      }
+      if (geometry.type === 'MultiPolygon') {
+        return geometry.coordinates.some(polyCoords => {
+          if (!polyCoords || !polyCoords.length) return false;
+          if (!pointInRing(lon, lat, polyCoords[0])) return false;
+          for (let h = 1; h < polyCoords.length; h++) {
+            if (pointInRing(lon, lat, polyCoords[h])) return false;
+          }
+          return true;
+        });
+      }
+      return false;
+    }
+
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = d => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function minDistanceToGeometryMeters(lat, lon, geometry) {
+      let minDist = Infinity;
+      const scanRing = ring => {
+        for (let i = 0; i < ring.length; i++) {
+          const d = haversineMeters(lat, lon, ring[i][1], ring[i][0]);
+          if (d < minDist) minDist = d;
+        }
+      };
+      if (geometry.type === 'Polygon') geometry.coordinates.forEach(scanRing);
+      else if (geometry.type === 'MultiPolygon') geometry.coordinates.forEach(poly => poly.forEach(scanRing));
+      return minDist;
+    }
+
+    function analyzeCoordinates(lat, lon) {
+      const matched = [];
+      const nearby = [];
+
+      for (const zoneType of ['ZFU', 'BER', 'ZRD']) {
+        const layerData = appState.layers[zoneType].geojson;
+        if (!layerData || !layerData.features) continue;
+
+        for (const feature of layerData.features) {
+          if (pointInPolygonGeometry(lon, lat, feature.geometry)) {
+            matched.push({ zoneType, feature });
+          } else {
+            const distM = minDistanceToGeometryMeters(lat, lon, feature.geometry);
+            if (distM <= 10000) nearby.push({ zoneType, feature, distanceMeters: distM });
+          }
+        }
+      }
+      nearby.sort((a, b) => a.distanceMeters - b.distanceMeters);
+      return { matched, nearby: nearby.slice(0, 5) };
+    }
+
+    async function searchAddressBAN(query) {
+      const url = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(query)}&limit=6`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const data = await res.json();
+      return (data.features || []).map(f => ({
+        lat: f.geometry.coordinates[1],
+        lon: f.geometry.coordinates[0],
+        label: f.properties.label,
+        context: f.properties.context
+      }));
+    }
+
+    async function reverseGeocodeBAN(lat, lon) {
+      try {
+        const url = `https://api-adresse.data.gouv.fr/reverse/?lon=${lon}&lat=${lat}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+        const data = await res.json();
+        if (data.features && data.features.length > 0) return { label: data.features[0].properties.label };
+      } catch (_) {}
+      return { label: `GPS (${lat.toFixed(5)}, ${lon.toFixed(5)})` };
+    }
+
+    async function handleLocationSelection(lat, lon, prefilledMeta = null, shouldZoom = true) {
+      const spinner = document.getElementById('search-spinner');
+      spinner.classList.remove('hidden');
+      try {
+        const meta = prefilledMeta || await reverseGeocodeBAN(lat, lon);
+        appState.selectedPoint = { lat, lon, ...meta };
+
+        if (appState.pinMarker) appState.map.removeLayer(appState.pinMarker);
+        if (appState.radiusCircle) appState.map.removeLayer(appState.radiusCircle);
+
+        const pinIcon = L.divIcon({
+          className: '',
+          html: `<div style="width:22px;height:22px;background:#ef4444;border:3px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,0.45);"></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11]
+        });
+
+        appState.pinMarker = L.marker([lat, lon], { icon: pinIcon }).addTo(appState.map);
+        appState.radiusCircle = L.circle([lat, lon], {
+          radius: 1000,
+          color: '#ef4444',
+          weight: 1.2,
+          dashArray: '5, 5',
+          fillColor: '#ef4444',
+          fillOpacity: 0.05,
+          interactive: false
+        }).addTo(appState.map);
+
+        if (shouldZoom) appState.map.flyTo([lat, lon], 14, { duration: 0.8 });
+
+        const { matched, nearby } = analyzeCoordinates(lat, lon);
+        renderAnalysisPanel(appState.selectedPoint, matched, nearby);
+        appState.pinMarker.bindPopup(buildLocationPopupHtml(appState.selectedPoint, matched), { maxWidth: 360 }).openPopup();
+      } finally {
+        spinner.classList.add('hidden');
+      }
+    }
+
+    /**
+     * ============================================================================
+     * 7. INTERFACE ET MODALES DE RESTITUTION
+     * ============================================================================
+     */
+    function escapeHtml(str) {
+      return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function renderAnalysisPanel(point, matched, nearby) {
+      const container = document.getElementById('analysis-container');
+      container.classList.remove('hidden');
+      document.getElementById('selected-address-title').textContent = point.label;
+      document.getElementById('selected-coords-subtitle').textContent = `GPS : ${point.lat.toFixed(6)}, ${point.lon.toFixed(6)}`;
+
+      const verdictEl = document.getElementById('eligibility-verdict');
+      const matchedListEl = document.getElementById('matched-zones-list');
+      const nearbyBoxEl = document.getElementById('nearby-zones-box');
+      const nearbyListEl = document.getElementById('nearby-zones-list');
+
+      matchedListEl.innerHTML = '';
+      nearbyListEl.innerHTML = '';
+
+      if (matched.length > 0) {
+        verdictEl.className = 'rounded-xl p-3 border text-sm bg-emerald-500/10 border-emerald-500/40';
+        verdictEl.innerHTML = `
+          <div class="font-bold text-emerald-700 dark:text-emerald-300">✅ Périmètre géographique éligible détecté</div>
+          <p class="text-xs mt-1 leading-relaxed">L’emplacement se situe dans <strong>${matched.length}</strong> périmètre(s) d’exonération.</p>
+        `;
+
+        matched.forEach(({ zoneType, feature }) => {
+          const doc = REGIME_DOCS[zoneType];
+          const props = feature.properties;
+          const card = document.createElement('div');
+          card.className = 'subtle-surface border rounded-xl p-3 text-xs space-y-2';
+          card.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="px-2 py-0.5 rounded text-[11px] font-bold text-white ${doc.badgeBg}">${doc.code}</span>
+              <button type="button" class="text-blue-600 dark:text-blue-400 font-semibold hover:underline">Fiche complète →</button>
+            </div>
+            <div class="font-bold text-sm">${escapeHtml(props._zoneName)}</div>
+            <div class="muted-text">Fiscal : ${escapeHtml(doc.fiscal.summary)}</div>
+          `;
+          card.querySelector('button').addEventListener('click', () => openRegimeModal(zoneType, props));
+          matchedListEl.appendChild(card);
+        });
+      } else {
+        verdictEl.className = 'rounded-xl p-3 border text-sm bg-slate-500/10 border-slate-400/40';
+        verdictEl.innerHTML = `
+          <div class="font-bold">ℹ️ Hors périmètre direct</div>
+          <p class="text-xs muted-text mt-1">Aucune zone active ne couvre directement ces coordonnées parmi les référentiels chargés.</p>
+        `;
+      }
+
+      if (nearby.length > 0) {
+        nearbyBoxEl.classList.remove('hidden');
+        nearby.forEach(({ zoneType, feature, distanceMeters }) => {
+          const doc = REGIME_DOCS[zoneType];
+          const row = document.createElement('div');
+          row.className = 'subtle-surface border rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2 text-xs';
+          row.innerHTML = `
+            <div class="truncate"><strong style="color:${doc.color}">${doc.code}</strong> · ${escapeHtml(feature.properties._zoneName)}</div>
+            <span class="font-mono text-[11px] muted-text">~${Math.round(distanceMeters)} m</span>
+          `;
+          nearbyListEl.appendChild(row);
+        });
+      } else {
+        nearbyBoxEl.classList.add('hidden');
+      }
+    }
+
+    function buildZonePopupHtml(feature) {
+      const props = feature.properties;
+      const doc = REGIME_DOCS[props._zoneType];
+      return `
+        <div class="p-3.5 text-xs space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="px-2 py-0.5 rounded font-bold text-white ${doc.badgeBg}">${doc.code}</span>
+            <span class="text-[11px] muted-text">${escapeHtml(props._source)}</span>
+          </div>
+          <h4 class="font-bold text-sm leading-snug">${escapeHtml(props._zoneName)}</h4>
+          <p class="muted-text">${escapeHtml(doc.fiscal.summary)}</p>
+          <button type="button" onclick="window.__openRegimeModal('${props._zoneType}', '${encodeURIComponent(JSON.stringify(props))}')" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg text-xs transition w-full">
+            Fiche réglementaire complète
+          </button>
+        </div>
+      `;
+    }
+
+    function buildLocationPopupHtml(point, matched) {
+      if (!matched.length) return `<div class="p-3 text-xs"><b>${escapeHtml(point.label)}</b><br>Hors périmètre répertorié.</div>`;
+      return `<div class="p-3 text-xs space-y-1"><b>${escapeHtml(point.label)}</b><br><span class="text-emerald-600 font-semibold">✓ ${matched.length} dispositif(s) applicable(s)</span></div>`;
+    }
+
+    window.__openRegimeModal = function(zoneType, encoded) {
+      try {
+        openRegimeModal(zoneType, JSON.parse(decodeURIComponent(encoded)));
+      } catch (_) {
+        openRegimeModal(zoneType, {});
+      }
+    };
+
+    function openRegimeModal(zoneType, props = {}) {
+      const doc = REGIME_DOCS[zoneType];
+      const modal = document.getElementById('detail-modal');
+      document.getElementById('modal-badge').className = `px-2.5 py-1 rounded-lg text-xs font-bold text-white shrink-0 ${doc.badgeBg}`;
+      document.getElementById('modal-badge').textContent = doc.code;
+      document.getElementById('modal-title').textContent = props._zoneName || doc.fullName;
+
+      document.getElementById('modal-body').innerHTML = `
+        <div class="subtle-surface border rounded-xl p-3.5 space-y-2 text-xs">
+          <h4 class="font-bold uppercase tracking-wider muted-text">1. Cadre géographique & Validité</h4>
+          <div><strong>Dispositif :</strong> ${escapeHtml(doc.fullName)}</div>
+          <div><strong>Périmètre :</strong> ${escapeHtml(doc.perimeterType)}</div>
+          <div><strong>Validité légale :</strong> <span class="text-amber-600 dark:text-amber-400 font-medium">${escapeHtml(doc.validity)}</span></div>
+        </div>
+        <div class="border border-blue-500/30 bg-blue-500/5 rounded-xl p-3.5 space-y-2 text-xs">
+          <h4 class="font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">2. Exonérations Fiscales</h4>
+          <p>${escapeHtml(doc.fiscal.summary)}</p>
+          <p><strong>Plafonds :</strong> ${escapeHtml(doc.fiscal.ceiling)}</p>
+        </div>
+        <div class="border border-emerald-500/30 bg-emerald-500/5 rounded-xl p-3.5 space-y-2 text-xs">
+          <h4 class="font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">3. Exonérations Sociales (URSSAF)</h4>
+          <p>${escapeHtml(doc.social.summary)}</p>
+        </div>
+        <div class="subtle-surface border rounded-xl p-3.5 space-y-2 text-xs">
+          <h4 class="font-bold uppercase tracking-wider muted-text">4. Conditions d’éligibilité juridique</h4>
+          <ul class="list-disc pl-4 space-y-1">${doc.conditions.map(c => `<li>${escapeHtml(c)}</li>`).join('')}</ul>
+        </div>
+        <div class="space-y-1 text-xs">
+          <h4 class="font-bold uppercase tracking-wider muted-text">5. Sources officielles</h4>
+          ${doc.references.map(r => `<div><a href="${r.url}" target="_blank" class="text-blue-600 hover:underline">↗ ${escapeHtml(r.label)}</a></div>`).join('')}
+        </div>
+      `;
+      modal.classList.remove('hidden');
+    }
+
+    /**
+     * ============================================================================
+     * 8. ÉCOUTEURS D'ÉVÉNEMENTS & DÉMARRAGE INDÉPENDANT
+     * ============================================================================
+     */
+    function bindEvents() {
+      document.getElementById('btn-theme').addEventListener('click', () => {
+        const root = document.documentElement;
+        root.setAttribute('data-theme', root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+      });
+
+      document.getElementById('btn-close-modal').addEventListener('click', () => document.getElementById('detail-modal').classList.add('hidden'));
+      document.getElementById('btn-close-modal-footer').addEventListener('click', () => document.getElementById('detail-modal').classList.add('hidden'));
+
+      // Rechargement individuel par couche
+      document.querySelectorAll('.btn-reload-layer').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const zType = btn.dataset.layer;
+          btn.textContent = 'Chargement…';
+          await loadLayerIndependent(zType);
+          btn.textContent = '↻ Recharger';
+        });
+      });
+
+      // Import GeoJSON manuel par couche
+      document.querySelectorAll('.file-layer-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+          const file = e.target.files[0];
+          const zType = input.dataset.layer;
+          if (!file) return;
+          try {
+            const text = await file.text();
+            const json = JSON.parse(text);
+            const normalized = normalizeGeoJson(json, zType, `Fichier local (${file.name})`);
+            if (normalized.features.length > 0) {
+              appState.layers[zType].geojson = normalized;
+              appState.layers[zType].loaded = true;
+              appState.layers[zType].count = normalized.features.length;
+              appState.layers[zType].source = file.name;
+              renderLayerOnMap(zType);
+              updateDiagnosticPanel(zType);
+            }
+          } catch (err) {
+            alert('Erreur d’import GeoJSON : ' + err.message);
+          }
+          input.value = '';
+        });
+      });
+
+      // Filtres
+      ['ZFU', 'BER', 'ZRD'].forEach(zType => {
+        const chk = document.getElementById(`filter-${zType.toLowerCase()}`);
+        chk.addEventListener('change', () => {
+          appState.layers[zType].visible = chk.checked;
+          const l = appState.layers[zType].leafletLayer;
+          if (l) {
+            if (chk.checked) l.addTo(appState.map);
+            else appState.map.removeLayer(l);
+          }
+        });
+      });
+
+      document.getElementById('btn-toggle-all-layers').addEventListener('click', () => {
+        const next = !['ZFU', 'BER', 'ZRD'].every(z => appState.layers[z].visible);
+        ['ZFU', 'BER', 'ZRD'].forEach(z => {
+          document.getElementById(`filter-${z.toLowerCase()}`).checked = next;
+          appState.layers[z].visible = next;
+          const l = appState.layers[z].leafletLayer;
+          if (l) {
+            if (next) l.addTo(appState.map);
+            else appState.map.removeLayer(l);
+          }
+        });
+      });
+
+      // Opacité
+      document.getElementById('opacity-slider').addEventListener('input', (e) => {
+        appState.fillOpacity = parseInt(e.target.value, 10) / 100;
+        document.getElementById('opacity-value').textContent = `${e.target.value}%`;
+        ['ZFU', 'BER', 'ZRD'].forEach(z => {
+          if (appState.layers[z].leafletLayer) appState.layers[z].leafletLayer.setStyle({ fillOpacity: appState.fillOpacity });
+        });
+      });
+
+      // Navigation DROM / Métropole
+      document.querySelectorAll('[data-fly]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const [lat, lon, zoom] = btn.dataset.fly.split(',').map(Number);
+          appState.map.flyTo([lat, lon], zoom, { duration: 0.8 });
+        });
+      });
+
+      document.getElementById('basemap-select').addEventListener('change', e => setBasemap(e.target.value));
+
+      // Recherche
+      const searchInput = document.getElementById('search-input');
+      const suggestionsList = document.getElementById('search-suggestions');
+      searchInput.addEventListener('input', async () => {
+        const val = searchInput.value.trim();
+        if (val.length < 3) {
+          suggestionsList.classList.add('hidden');
+          return;
+        }
+        try {
+          const results = await searchAddressBAN(val);
+          suggestionsList.innerHTML = results.map(item => `
+            <li class="px-3 py-2 text-xs cursor-pointer hover:bg-blue-600/10">
+              <div class="font-semibold">${escapeHtml(item.label)}</div>
+              <div class="text-[11px] muted-text">${escapeHtml(item.context || '')}</div>
+            </li>
+          `).join('');
+          suggestionsList.querySelectorAll('li').forEach((li, idx) => {
+            li.addEventListener('click', () => {
+              searchInput.value = results[idx].label;
+              suggestionsList.classList.add('hidden');
+              handleLocationSelection(results[idx].lat, results[idx].lon, results[idx], true);
+            });
+          });
+          suggestionsList.classList.remove('hidden');
+        } catch (_) {}
+      });
+
+      document.getElementById('btn-search-submit').addEventListener('click', async () => {
+        const results = await searchAddressBAN(searchInput.value.trim());
+        if (results.length > 0) handleLocationSelection(results[0].lat, results[0].lon, results[0], true);
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      initMap();
+      bindEvents();
+
+      // Chargement 100% indépendant et asynchrone des trois couches
+      await Promise.all([
+        loadLayerIndependent('ZFU'),
+        loadLayerIndependent('BER'),
+        loadLayerIndependent('ZRD')
+      ]);
+    });
+  </script>
+</body>
+</html>
